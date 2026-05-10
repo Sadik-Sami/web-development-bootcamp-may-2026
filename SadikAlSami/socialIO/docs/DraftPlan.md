@@ -1,6 +1,6 @@
 # Real-Time Chat Application — Draft Plan (Current + Gap)
 
-> Stack target: Next.js · Hono · Better Auth · Drizzle ORM · PostgreSQL · Redis · Cloudinary · WebSockets  
+> Stack target: Next.js · Hono · Better Auth · Drizzle ORM · PostgreSQL · Redis · Cloudinary · WebSockets
 > Snapshot date: May 10, 2026
 
 ---
@@ -155,7 +155,7 @@ The canonical schema source for planning is:
 - [x] Better Auth baseline integration
 - [x] Basic Hono server bootstrapped
 - [x] Local Postgres + Redis infra setup in `packages/db`
-- [ ] Chat domain Drizzle schema implementation
+- [x] Chat domain Drizzle schema implementation
 - [ ] Chat HTTP APIs
 - [ ] Realtime WebSocket flow
 

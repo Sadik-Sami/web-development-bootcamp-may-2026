@@ -1,3 +1,11 @@
+CREATE TYPE "conversation_type" AS ENUM ('dm', 'group');
+
+CREATE TYPE "participant_role" AS ENUM ('admin', 'member');
+
+CREATE TYPE "message_type" AS ENUM ('text', 'image', 'system');
+
+CREATE TYPE "message_delivery_status" AS ENUM ('delivered', 'seen');
+
 CREATE TABLE "user" (
   "id" text PRIMARY KEY,
   "name" text NOT NULL,
@@ -56,7 +64,7 @@ CREATE TABLE "user_profile" (
 
 CREATE TABLE "conversation" (
   "id" text PRIMARY KEY,
-  "type" text NOT NULL,
+  "type" "conversation_type" NOT NULL,
   "name" text,
   "avatar_url" text,
   "last_message_id" text,
@@ -68,7 +76,7 @@ CREATE TABLE "participant" (
   "id" text PRIMARY KEY,
   "conversation_id" text NOT NULL,
   "user_id" text NOT NULL,
-  "role" text NOT NULL DEFAULT 'member',
+  "role" "participant_role" NOT NULL DEFAULT 'member',
   "nickname" text,
   "left_at" timestamp,
   "joined_at" timestamp NOT NULL DEFAULT (now()),
@@ -82,7 +90,7 @@ CREATE TABLE "message" (
   "sequence_number" integer NOT NULL,
   "content_iv" text NOT NULL,
   "content_enc" text NOT NULL,
-  "type" text NOT NULL DEFAULT 'text',
+  "type" "message_type" NOT NULL DEFAULT 'text',
   "image_url" text,
   "reply_to_id" text,
   "is_edited" boolean NOT NULL DEFAULT false,
@@ -103,7 +111,7 @@ CREATE TABLE "message_edit_history" (
 CREATE TABLE "message_status" (
   "message_id" text NOT NULL,
   "user_id" text NOT NULL,
-  "status" text NOT NULL,
+  "status" "message_delivery_status" NOT NULL,
   "updated_at" timestamp NOT NULL DEFAULT (now()),
   PRIMARY KEY ("message_id", "user_id")
 );
@@ -129,8 +137,6 @@ CREATE INDEX "participant_convId_idx" ON "participant" ("conversation_id");
 CREATE INDEX "participant_userId_idx" ON "participant" ("user_id");
 
 CREATE UNIQUE INDEX "message_conv_seq_uq" ON "message" ("conversation_id", "sequence_number");
-
-CREATE INDEX "message_conv_seq_idx" ON "message" ("conversation_id", "sequence_number");
 
 CREATE INDEX "message_senderId_idx" ON "message" ("sender_id");
 
@@ -228,7 +234,7 @@ ALTER TABLE "session" ADD CONSTRAINT "session_user" FOREIGN KEY ("user_id") REFE
 
 ALTER TABLE "account" ADD CONSTRAINT "account_user" FOREIGN KEY ("user_id") REFERENCES "user" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "user" ADD CONSTRAINT "profile_user" FOREIGN KEY ("id") REFERENCES "user_profile" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "user_profile" ADD CONSTRAINT "profile_user" FOREIGN KEY ("id") REFERENCES "user" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "conversation" ADD CONSTRAINT "conv_last_msg" FOREIGN KEY ("last_message_id") REFERENCES "message" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
