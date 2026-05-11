@@ -10,20 +10,21 @@
     "start": "node dist/index.mjs"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.4",
     "@socialIO/auth": "workspace:*",
     "@socialIO/db": "workspace:*",
     "@socialIO/env": "workspace:*",
+    "@hono/node-server": "^2.0.2",
+    "@hono/zod-validator": "^0.8.0",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
-    "hono": "^4.8.2",
+    "hono": "^4.12.18",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@socialIO/config": "workspace:*",
-    "@types/node": "^22.13.14",
-    "tsdown": "^0.21.9",
-    "tsx": "^4.19.2",
+    "@types/node": "^25.6.2",
+    "tsdown": "^0.22.0",
+    "tsx": "^4.21.0",
     "typescript": "catalog:"
   }
 }

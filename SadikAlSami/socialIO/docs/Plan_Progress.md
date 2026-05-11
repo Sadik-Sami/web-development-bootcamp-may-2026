@@ -178,11 +178,11 @@ I run AES-256-GCM encryption entirely on the server. The client always receives 
 
 Measured cost on Node.js with OpenSSL AES-NI hardware acceleration:
 
-| Operation | Time per message | 3000 messages |
-|---|---|---|
-| `encrypt()` | ~0.006ms | ~18ms total |
-| `decrypt()` | ~0.004ms | ~13ms total |
-| DB round-trip (for comparison) | ~5-20ms | dominant cost |
+| Operation                      | Time per message | 3000 messages |
+| ------------------------------ | ---------------- | ------------- |
+| `encrypt()`                    | ~0.006ms         | ~18ms total   |
+| `decrypt()`                    | ~0.004ms         | ~13ms total   |
+| DB round-trip (for comparison) | ~5-20ms          | dominant cost |
 
 Encryption contributes about 1% of total request time on a cache miss and 0% on a cache hit. The DB network hop is the real bottleneck, not crypto.
 
@@ -219,7 +219,7 @@ Users 2-50 open     ->  cache hit   ->  ZREVRANGEBYSCORE -> JSON.parse only
 Cache read path (first page, no cursor):
 
 ```ts
-const cached = await redis.zrevrangebyscore(cacheKey, "+inf", "-inf", "LIMIT", 0, 30);
+const cached = await redis.zrevrangebyscore(cacheKey, '+inf', '-inf', 'LIMIT', 0, 30);
 if (cached.length === 30) return cached.map((s) => JSON.parse(s)); // zero DB, zero decrypt
 ```
 
@@ -312,6 +312,7 @@ Server -> encrypt(public_id) -> INSERT message { content_enc, content_iv, image_
 ```
 
 Key points:
+
 - `image_url` (Cloudinary CDN URL) is stored unencrypted because it is public by definition.
 - `content` stores the `public_id`, which is encrypted. It contains internal path info required for deletion.
 - `public_id` must be stored to support `DELETE /api/upload/image` (Cloudinary `uploader.destroy(publicId)`).
@@ -352,16 +353,19 @@ Key points:
 ### Day 1 - Baseline Alignment + Schema Bring-Up
 
 Status:
+
 - [x] Monorepo scaffold exists
 - [x] Better Auth baseline exists
 - [x] Postgres + Redis local infra exists
 
 Remaining:
+
 - [x] Implement full chat/domain schema in Drizzle from canonical SQL design
 - [x] Generate/push migrations for new tables and indexes
 - [x] Add schema-level enums/validation contracts for role/type/status fields
 
 Deliverable:
+
 - Drizzle schema matches canonical chat design.
 
 ---
@@ -369,19 +373,24 @@ Deliverable:
 ### Day 2 - Chat Core HTTP + Types
 
 Backend todos:
-- [ ] Implement `packages/db/src/crypto.ts` (`encrypt`, `decrypt`, benchmark)
+
+- [ ] Define shared Zod schemas for conversation and message inputs/outputs (chat), user and profile in `packages/db/src/validators` - these are the ones that will decide what enters and exits the database
+- [ ] Use shared Zod schemas and implment validators in `apps/server/src/validators` - these are the ones that decide what enters and exits the server API layer
+- [ ] Implement `packages/db/src/crypto.ts` (`encrypt`, `decrypt`)
 - [ ] Implement `formatMessage()` boundary in `message.service.ts` (ciphertext never exits this function)
-- [ ] Define shared Zod schemas for conversation and message inputs/outputs
 - [ ] Add Hono routes for conversations and messages with `zValidator` and typed responses
+- [ ] Implement auth, error and validation middleware in apps/server/src/middlewares
 - [ ] Implement sequence-number transaction strategy (`SELECT FOR UPDATE`) and atomic `last_message_id` update
 - [ ] Add cursor-based pagination by `sequence_number` (limit 30)
 
 Frontend todos:
+
 - [ ] Create chat shell route (`/chat`) with empty states
 - [ ] Add data hooks for conversation list + message list (typed fetchers)
 - [ ] Add basic composer UI and send action wiring (no realtime yet)
 
 Deliverable:
+
 - End-to-end chat via HTTP (no realtime yet) with typed, validated APIs. Encryption verified by inspecting DB rows directly.
 
 ---
@@ -389,6 +398,7 @@ Deliverable:
 ### Day 3 - Realtime + Redis Integration
 
 Backend todos:
+
 - [ ] WebSocket upgrade and connection lifecycle
 - [ ] Redis pub/sub fan-out on `conversation:{conversationId}`
 - [ ] Typing key TTL (5s) and presence heartbeat TTL (30s)
@@ -397,11 +407,13 @@ Backend todos:
 - [ ] Cache read path: `ZREVRANGEBYSCORE` before DB query on conversation open
 
 Frontend todos:
+
 - [ ] WebSocket client wiring and room join/leave
 - [ ] Realtime updates for message list + typing indicators
 - [ ] Reorder chat list on `conversation_updated`
 
 Deliverable:
+
 - Two clients receive live messages, typing updates, and chat list reordering. Cache hit verified via Redis CLI (`ZCARD messages:{id}` > 0 after open).
 
 ---
@@ -409,16 +421,19 @@ Deliverable:
 ### Day 4 - Message Status + Chat List Fidelity
 
 Backend todos:
+
 - [ ] Delivered/seen persistence and broadcast
 - [ ] Conversation list fetch by `last_message_id` with preview data
 - [ ] Read-receipt behavior for DM and group contexts
 - [ ] Cache append on new message send (Problem 2 solution: pipeline ZADD + ZREMRANGEBYRANK + EXPIRE)
 
 Frontend todos:
+
 - [ ] Status ticks and read receipts on messages
 - [ ] Chat list preview (last message, time, unread count)
 
 Deliverable:
+
 - Reliable message lifecycle UX and correct chat list ordering. Cache stays fresh across sends.
 
 ---
@@ -426,15 +441,18 @@ Deliverable:
 ### Day 5 - Groups, Roles, Reactions
 
 Backend todos:
+
 - [ ] Group role authorization gates
 - [ ] Member add/remove + nickname updates
 - [ ] Reaction mutation + realtime sync
 
 Frontend todos:
+
 - [ ] Group member management UI
 - [ ] Reaction picker and reaction list display
 
 Deliverable:
+
 - Multi-user group workflow complete.
 
 ---
@@ -442,6 +460,7 @@ Deliverable:
 ### Day 6 - Upload + Edit + Cache Hardening
 
 Backend todos:
+
 - [ ] Signed upload endpoint (`POST /api/upload/sign`) - SHA-1 signature, constrained params
 - [ ] Image delete endpoint (`DELETE /api/upload/image`) - ownership check + Cloudinary destroy + soft-delete
 - [ ] Image message send path: `type: "image"`, `image_url` unencrypted, `content` (public_id) encrypted
@@ -450,11 +469,13 @@ Backend todos:
 - [ ] Validate cache correctness: open group, send message, edit message, re-open (confirm cache reflects current state)
 
 Frontend todos:
+
 - [ ] Image message send (XHR with progress bar) and render (`<img>` with lightbox)
 - [ ] Edit message UI: inline edit, "Edited" label under bubble
 - [ ] Display `is_deleted` messages as "This message was deleted"
 
 Deliverable:
+
 - Media, edit, and cache invalidation all validated end-to-end.
 
 ---
@@ -462,18 +483,21 @@ Deliverable:
 ### Day 7 - Hardening + Deploy Readiness
 
 Backend todos:
+
 - [ ] Error handling and rate-limit guardrails
 - [ ] Deployment wiring (web -> Vercel, server + Postgres + Redis -> Railway)
 - [ ] Verify WSS works on production (TLS proxy, correct `wss://` client URL)
 - [ ] Run `infra:test` smoke test against production Redis + Postgres
 
 Frontend todos:
+
 - [ ] Error/empty/loading UX hardening
 - [ ] Failed send retry state (red `!` indicator)
 - [ ] Connection lost banner (WS disconnect detection)
 - [ ] Documentation and demo polish (README, architecture diagrams, live link, demo GIF)
 
 Deliverable:
+
 - Submission-ready build. All rubric items covered and documented.
 
 ---
@@ -481,22 +505,26 @@ Deliverable:
 ## 9. Frontend Functional Plan (Pages + Modules)
 
 Routes (proposed):
+
 - `/login` (existing): sign-in/sign-up UI
 - `/chat`: chat shell with conversation list + thread view
 - `/settings` (optional): profile edits, notification toggles
 
 Core UI modules:
+
 - Conversation list: preview, unread counts, last message, updated ordering on `conversation_updated`
 - Thread view: message list with infinite scroll, typing indicator with avatar, status ticks
 - Composer: text input, send button, file/image attachment, edit mode
 - Header + user menu: profile/exit settings
 
 Data + state:
+
 - Server state: TanStack Query for conversation list + paginated messages via typed endpoints
 - Client state: Zustand for message list + pagination cursor (`lowestSeq`, `hasMore`, `isLoadingMore`) + optimistic message buffer
 - Realtime: WebSocket client for message + typing + status updates
 
 UI states:
+
 - Empty chat list, empty thread
 - Loading and retry states for pagination and send
 - Failed send state: red `!` with retry action
@@ -546,6 +574,7 @@ packages/db/src/
 ### Current baseline (observed)
 
 Server:
+
 - `DATABASE_URL`
 - `REDIS_URL`
 - `BETTER_AUTH_SECRET`
@@ -553,17 +582,20 @@ Server:
 - `CORS_ORIGIN`
 
 Web:
+
 - `NEXT_PUBLIC_SERVER_URL`
 
 ### Planned additions for chat features
 
 Server:
+
 - `ENCRYPTION_KEY` - 64-char hex string (32 bytes). Generate: `openssl rand -hex 32`
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
 
 Web:
+
 - Optional split URLs if needed later:
   - `NEXT_PUBLIC_API_URL`
   - `NEXT_PUBLIC_WS_URL`
@@ -603,14 +635,14 @@ Encryption boundary rule: `content_enc` and `content_iv` must never appear outsi
 
 ## 13. Risks and Mitigations
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| Plan and code drift diverge again | Medium | Keep "Current vs Planned" split and update status markers each milestone |
-| Realtime complexity blocks timeline | Medium | Stabilize HTTP + schema first, then layer WS/pub-sub |
-| Sequence-order bugs under concurrency | Low | Transactional sequence allocation (`SELECT FOR UPDATE`) and DB unique constraint |
-| Cache serving stale content after edit | Low | Problem 3 solution: `ZREMRANGEBYSCORE` + `ZADD` at same score on every edit |
-| Cache serving stale content after send | Low | Problem 2 solution: pipeline `ZADD` + `ZREMRANGEBYRANK` + `EXPIRE` after every insert |
-| Redis unavailable at runtime | Low | All cache paths fall through to DB silently (Redis is a performance layer, not a durability layer) |
-| Cloudinary signed URL replayed by attacker | Low | Timestamp in signature expires within 60s; `allowed_formats` and `max_file_size` constrained in signature |
-| Infra mismatch across local machines | Medium | Keep env-driven docker host-port config and document defaults |
-| Write throughput exceeds DB capacity | Very Low at project scale | Direct per-message transaction is correct now; write buffer documented as known scaling path |
+| Risk                                       | Likelihood                | Mitigation                                                                                                |
+| ------------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Plan and code drift diverge again          | Medium                    | Keep "Current vs Planned" split and update status markers each milestone                                  |
+| Realtime complexity blocks timeline        | Medium                    | Stabilize HTTP + schema first, then layer WS/pub-sub                                                      |
+| Sequence-order bugs under concurrency      | Low                       | Transactional sequence allocation (`SELECT FOR UPDATE`) and DB unique constraint                          |
+| Cache serving stale content after edit     | Low                       | Problem 3 solution: `ZREMRANGEBYSCORE` + `ZADD` at same score on every edit                               |
+| Cache serving stale content after send     | Low                       | Problem 2 solution: pipeline `ZADD` + `ZREMRANGEBYRANK` + `EXPIRE` after every insert                     |
+| Redis unavailable at runtime               | Low                       | All cache paths fall through to DB silently (Redis is a performance layer, not a durability layer)        |
+| Cloudinary signed URL replayed by attacker | Low                       | Timestamp in signature expires within 60s; `allowed_formats` and `max_file_size` constrained in signature |
+| Infra mismatch across local machines       | Medium                    | Keep env-driven docker host-port config and document defaults                                             |
+| Write throughput exceeds DB capacity       | Very Low at project scale | Direct per-message transaction is correct now; write buffer documented as known scaling path              |
