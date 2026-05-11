@@ -374,12 +374,13 @@ Deliverable:
 
 Backend todos:
 
-- [ ] Define shared Zod schemas for conversation and message inputs/outputs (chat), user and profile in `packages/db/src/validators` - these are the ones that will decide what enters and exits the database
-- [ ] Use shared Zod schemas and implment validators in `apps/server/src/validators` - these are the ones that decide what enters and exits the server API layer
+- [x] Define shared Zod schemas for conversation and message inputs/outputs (chat), user and profile in `packages/db/src/validators` - these are the ones that will decide what enters and exits the database
+- [x] Use shared Zod schemas and implment validators in `apps/server/src/validators` - these are the ones that decide what enters and exits the server API layer
+- [x] Implement auth, error and validation middleware in apps/server/src/middlewares
+- [x] Add hono and app environments for typed context (`zValidator` output + auth session)
+- [ ] Add Hono routes for conversations and messages with `zValidator` and typed responses
 - [ ] Implement `packages/db/src/crypto.ts` (`encrypt`, `decrypt`)
 - [ ] Implement `formatMessage()` boundary in `message.service.ts` (ciphertext never exits this function)
-- [ ] Add Hono routes for conversations and messages with `zValidator` and typed responses
-- [ ] Implement auth, error and validation middleware in apps/server/src/middlewares
 - [ ] Implement sequence-number transaction strategy (`SELECT FOR UPDATE`) and atomic `last_message_id` update
 - [ ] Add cursor-based pagination by `sequence_number` (limit 30)
 
