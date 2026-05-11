@@ -13,6 +13,17 @@ export function createAuth() {
 
       schema: schema,
     }),
+    user: {
+      fields: {
+        image: "imageUrl",
+      },
+      additionalFields: {
+        imagePublicId: {
+          type: "string",
+          input: false,
+        },
+      },
+    },
     trustedOrigins: [env.CORS_ORIGIN],
     emailAndPassword: {
       enabled: true,
