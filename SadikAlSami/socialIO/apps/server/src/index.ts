@@ -9,7 +9,7 @@ import { errorHandler, notFound } from './middlewares';
 
 import type { AppEnv } from './types/app-env';
 
-import { profileController } from './controllers/profile.controller';
+import { profileController } from './controllers';
 
 const app = new Hono<AppEnv>({ strict: false });
 

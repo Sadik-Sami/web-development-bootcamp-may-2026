@@ -19,6 +19,7 @@
     "dotenv": "catalog:",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.18",
+    "nanoid": "^5.1.11",
     "zod": "catalog:"
   },
   "devDependencies": {
