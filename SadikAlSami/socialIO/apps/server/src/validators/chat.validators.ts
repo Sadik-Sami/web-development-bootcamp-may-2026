@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 import {
+	CONVERSATION_NAME_MAX,
 	MESSAGE_REACTION_EMOJI_MAX,
-	conversationInsertSchema,
+	// conversationInsertSchema,
 	conversationSelectSchema,
 	conversationUpdateSchema,
 	messageInsertSchema,
@@ -38,25 +39,44 @@ export const reactionEmojiParamSchema = z.object({
 	emoji: z.string().min(1).max(MESSAGE_REACTION_EMOJI_MAX),
 });
 
-export const createConversationBodySchema = conversationInsertSchema
-	.pick({ type: true, name: true, avatarUrl: true })
-	.superRefine((data, ctx) => {
-		if (data.type === 'group' && !data.name) {
-			ctx.addIssue({
-				code: 'custom',
-				message: 'name is required for group conversations',
-				path: ['name'],
-			});
-		}
+// export const createConversationBodySchema = conversationInsertSchema
+// 	.pick({ type: true, name: true, avatarUrl: true })
+// 	.superRefine((data, ctx) => {
+// 		if (data.type === 'group' && !data.name) {
+// 			ctx.addIssue({
+// 				code: 'custom',
+// 				message: 'name is required for group conversations',
+// 				path: ['name'],
+// 			});
+// 		}
 
-		if (data.type === 'dm' && data.name) {
-			ctx.addIssue({
-				code: 'custom',
-				message: 'name must be empty for dm conversations',
-				path: ['name'],
-			});
-		}
-	});
+// 		if (data.type === 'dm' && data.name) {
+// 			ctx.addIssue({
+// 				code: 'custom',
+// 				message: 'name must be empty for dm conversations',
+// 				path: ['name'],
+// 			});
+// 		}
+// 	});
+
+export const createDmConversationBodySchema = z.object({
+	type: z.literal('dm'),
+	participantId: z.string().min(1),
+});
+
+export const createGroupConversationBodySchema = z.object({
+	type: z.literal('group'),
+	name: z.string().min(1).max(CONVERSATION_NAME_MAX),
+	participantIds: z.array(z.string().min(1)).min(1).max(49),
+	avatarUrl: z.url().optional(),
+});
+
+export const createConversationBodySchema = z.discriminatedUnion('type', [
+	createDmConversationBodySchema,
+	createGroupConversationBodySchema,
+]);
+
+// -------------------------------
 
 export const updateConversationBodySchema = conversationUpdateSchema
 	.pick({ name: true, avatarUrl: true })
@@ -71,6 +91,43 @@ export const updateConversationBodySchema = conversationUpdateSchema
 	});
 
 export const conversationResponseSchema = conversationSelectSchema;
+
+// TEST (Added for testing)
+export const conversationListItemSchema = conversationResponseSchema.extend({
+	lastMessage: z
+		.object({
+			id: z.string(),
+			content: z.string().nullable(),
+			type: z.enum(['text', 'image', 'system']),
+			isDeleted: z.boolean(),
+			createdAt: z.date(),
+			senderId: z.string(),
+			senderName: z.string().nullable(),
+		})
+		.nullable(),
+});
+
+export const conversationParticipantSchema = z.object({
+	id: z.string(),
+	userId: z.string(),
+	role: z.enum(['admin', 'member']),
+	nickname: z.string().nullable(),
+	joinedAt: z.date(),
+	displayName: z.string().nullable(),
+	avatarUrl: z.string().nullable(),
+});
+
+export const conversationDetailResponseSchema = conversationResponseSchema.extend({
+	participants: z.array(conversationParticipantSchema),
+});
+
+export const createGroupBodySchema = z.object({
+	name: z.string().min(1).max(CONVERSATION_NAME_MAX),
+	participantIds: z.array(z.string()).min(1).max(49),
+	avatarUrl: z.url().optional(),
+});
+
+// ------------------------------
 
 const messageTypeInputSchema = z.enum(['text', 'image']);
 
@@ -160,3 +217,10 @@ export type ReactionResponse = z.infer<typeof reactionResponseSchema>;
 
 export type UpdateMessageStatusBody = z.infer<typeof updateMessageStatusBodySchema>;
 export type MessageStatusResponse = z.infer<typeof messageStatusResponseSchema>;
+
+// Testing types
+export type ConversationListItemResponse = z.infer<typeof conversationListItemSchema>;
+
+export type ConversationDetailResponse = z.infer<typeof conversationDetailResponseSchema>;
+
+export type CreateGroupBody = z.infer<typeof createGroupBodySchema>;

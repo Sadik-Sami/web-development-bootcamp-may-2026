@@ -13,6 +13,12 @@
       "skillPath": "skills/docker-development/SKILL.md",
       "computedHash": "1c455c14f2871b812ca7dae77261fa8086016e0481d5b3234ee98303fcf592ec"
     },
+    "drizzle-best-practices": {
+      "source": "honra-io/drizzle-best-practices",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "39459e68af51d6dd06ba58af327e1708eeb9ab0e500e6c078c690eafae17683f"
+    },
     "hono": {
       "source": "yusukebe/hono-skill",
       "sourceType": "github",

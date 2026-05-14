@@ -41,8 +41,8 @@ export async function cacheGetMessages(conversationId: string, limit: number): P
 	const key = RedisKeys.messageCache(conversationId);
 	// Retrieve messages in reverse order (newest first) up to the specified limit
 	const cached = await redis.zrevrangebyscore(key, '+inf', '-inf', 'LIMIT', 0, limit);
-	// Only return if we have a full page, otherwise treat it as a cache miss and return null to trigger DB fetch
-	return cached.length > 0 ? cached : null;
+	// Only return if we have a full page; otherwise treat as cache miss
+	return cached.length === limit ? cached : null;
 }
 
 /**

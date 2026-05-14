@@ -382,28 +382,28 @@ Three changes to the existing schema:
 
 ```ts
 // packages/db/src/schema/profile.ts
-import { text, timestamp, pgTable, index } from "drizzle-orm/pg-core";
-import { user } from "./auth";
+import { text, timestamp, pgTable, index } from 'drizzle-orm/pg-core';
+import { user } from './auth';
 
 export const userProfile = pgTable(
-  "user_profile",
-  {
-    id: text("id")
-      .primaryKey()
-      .references(() => user.id, { onDelete: "cascade" }),
-    displayName: text("display_name").notNull().unique(),
-    avatarUrl: text("avatar_url"),
-    bio: text("bio"),
-    lastSeenAt: timestamp("last_seen_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [index("user_profile_display_name_idx").on(table.displayName)],
-  // The GIN trigram index lives in the custom migration file:
-  // packages/db/src/migrations/0002_enable_pg_trgm.sql
+	'user_profile',
+	{
+		id: text('id')
+			.primaryKey()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		displayName: text('display_name').notNull().unique(),
+		avatarUrl: text('avatar_url'),
+		bio: text('bio'),
+		lastSeenAt: timestamp('last_seen_at'),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at')
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [index('user_profile_display_name_idx').on(table.displayName)],
+	// The GIN trigram index lives in the custom migration file:
+	// packages/db/src/migrations/0002_enable_pg_trgm.sql
 );
 ```
 
@@ -430,6 +430,7 @@ pnpm --filter @socialIO/db db:push
 Better Auth creates the `user` row on signup. Your app does **not** auto-create `user_profile`. After every login, the frontend checks whether a profile exists. If not, it redirects to `/profile/setup` before the user can access `/chat`.
 
 This is the correct design because:
+
 - Auto-creating an empty profile violates the `display_name NOT NULL` constraint
 - Even if you allowed null display names, search would be broken for those users
 - Forcing profile setup is the standard pattern (Discord, Notion, Linear all do this)
@@ -438,20 +439,17 @@ This is the correct design because:
 
 ```ts
 // apps/server/src/routes/profile.ts
-profileRouter.get("/me", isAuthenticated, async (c) => {
-  const sessionUser = c.get("user")!;
-  const userId = sessionUser.id;
+profileRouter.get('/me', isAuthenticated, async (c) => {
+	const sessionUser = c.get('user')!;
+	const userId = sessionUser.id;
 
-  const [profile] = await db
-    .select()
-    .from(userProfile)
-    .where(eq(userProfile.id, userId));
+	const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, userId));
 
-  if (!profile) {
-    return c.json({ exists: false }, 404);
-  }
+	if (!profile) {
+		return c.json({ exists: false }, 404);
+	}
 
-  return c.json({ exists: true, profile });
+	return c.json({ exists: true, profile });
 });
 ```
 
@@ -460,63 +458,53 @@ profileRouter.get("/me", isAuthenticated, async (c) => {
 ```ts
 // apps/server/src/routes/profile.ts
 const createProfileSchema = z.object({
-  displayName: z
-    .string()
-    .min(3, "Display name must be at least 3 characters")
-    .max(32, "Display name must be at most 32 characters")
-    .regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers, and underscores"),
-  avatarUrl: z.url().optional(),
-  bio: z.string().max(160).optional(),
+	displayName: z
+		.string()
+		.min(3, 'Display name must be at least 3 characters')
+		.max(32, 'Display name must be at most 32 characters')
+		.regex(/^[a-zA-Z0-9_]+$/, 'Only letters, numbers, and underscores'),
+	avatarUrl: z.url().optional(),
+	bio: z.string().max(160).optional(),
 });
 
-profileRouter.post(
-  "/",
-  isAuthenticated,
-  validate("json", createProfileSchema),
-  async (c) => {
-    const sessionUser = c.get("user")!;
-    const userId = sessionUser.id;
-    const body = c.req.valid("json");
+profileRouter.post('/', isAuthenticated, validate('json', createProfileSchema), async (c) => {
+	const sessionUser = c.get('user')!;
+	const userId = sessionUser.id;
+	const body = c.req.valid('json');
 
-    const [existing] = await db
-      .select({ id: userProfile.id })
-      .from(userProfile)
-      .where(eq(userProfile.id, userId));
+	const [existing] = await db.select({ id: userProfile.id }).from(userProfile).where(eq(userProfile.id, userId));
 
-    if (existing) {
-      return c.json({ error: "Profile already exists" }, 409);
-    }
+	if (existing) {
+		return c.json({ error: 'Profile already exists' }, 409);
+	}
 
-    try {
-      const [created] = await db
-        .insert(userProfile)
-        .values({
-          id: userId,
-          displayName: body.displayName,
-          avatarUrl: body.avatarUrl ?? null,
-          bio: body.bio ?? null,
-        })
-        .returning();
+	try {
+		const [created] = await db
+			.insert(userProfile)
+			.values({
+				id: userId,
+				displayName: body.displayName,
+				avatarUrl: body.avatarUrl ?? null,
+				bio: body.bio ?? null,
+			})
+			.returning();
 
-      return c.json(created, 201);
-    } catch (err: any) {
-      if (err.code === "23505") {
-        return c.json(
-          { error: "Display name is already taken. Please choose another." },
-          409,
-        );
-      }
-      throw err;
-    }
-  },
-);
+		return c.json(created, 201);
+	} catch (err: any) {
+		if (err.code === '23505') {
+			return c.json({ error: 'Display name is already taken. Please choose another.' }, 409);
+		}
+		throw err;
+	}
+});
 ```
 
 #### C. User search
 
 Endpoint:
+
 ```
-GET /api/users/search?q={query}
+GET /api/profile/search?q={query}
 ```
 
 - Requires auth (session cookie)
@@ -527,35 +515,30 @@ GET /api/users/search?q={query}
 - Returns only `id`, `displayName`, `avatarUrl`
 
 ```ts
-// apps/server/src/routes/users.ts
+// apps/server/src/controllers/profile.controller.ts
 const searchQuerySchema = z.object({
-  q: z.string().min(2, "Search query must be at least 2 characters").max(50),
+	q: z.string().min(2, 'Search query must be at least 2 characters').max(50),
 });
 
-usersRouter.get(
-  "/search",
-  isAuthenticated,
-  validate("query", searchQuerySchema),
-  async (c) => {
-    const sessionUser = c.get("user")!;
-    const { q } = c.req.valid("query");
+profileController.get('/search', isAuthenticated, validate('query', searchQuerySchema), async (c) => {
+	const sessionUser = c.get('user')!;
+	const { q } = c.req.valid('query');
 
-    const results = await searchUsers(q, sessionUser.id);
-    return c.json(results);
-  },
-);
+	const results = await searchUsers(q, sessionUser.id);
+	return c.json(results);
+});
 ```
 
 #### D. Online/offline presence and last seen
 
 Two separate concerns — do not conflate them:
 
-| Concern | Storage | Updated when | Used for |
-|---|---|---|---|
-| **Online now** (green dot) | Redis `presence:user:{id}` HASH, TTL 30s | WS connect, heartbeat every 20s | Live indicator in chat UI |
-| **Last seen** (e.g. "3h ago") | `user_profile.last_seen_at` timestamp | WS disconnect | Shown when user is offline |
+| Concern                       | Storage                                  | Updated when                    | Used for                   |
+| ----------------------------- | ---------------------------------------- | ------------------------------- | -------------------------- |
+| **Online now** (green dot)    | Redis `presence:user:{id}` HASH, TTL 30s | WS connect, heartbeat every 20s | Live indicator in chat UI  |
+| **Last seen** (e.g. "3h ago") | `user_profile.last_seen_at` timestamp    | WS disconnect                   | Shown when user is offline |
 
-The REST presence endpoint belongs to Day 2; WS presence wiring is Day 3.
+The REST presence endpoint is deferred; WS presence wiring is Day 3.
 
 ---
 
@@ -591,39 +574,42 @@ The REST presence endpoint belongs to Day 2; WS presence wiring is Day 3.
 
 ##### E4. User service (`apps/server/src/services/user.service.ts`)
 
-- [ ] `searchUsers(query, requestingUserId)` — trigram ILIKE on display_name + prefix on email, max 20
+- [x] `searchUsers(query, requestingUserId)` — trigram ILIKE on display_name + prefix on email, max 20
 - [ ] `getUserPresence(userIds[])` — Redis pipeline EXISTS check, returns `Record<string, boolean>`
 
 ##### E5. Conversation service (`apps/server/src/services/conversation.service.ts`)
 
-- [ ] `findOrCreateDm(userAId, userBId)` — sort IDs, check existing, create if not found
-- [ ] `createGroup({ name, creatorId, participantIds[] })` — insert conversation + participants, creator gets role admin
-- [ ] `getUserConversations(userId)` — join with last_message + sender profile for preview
-- [ ] `getConversationById(id, requestingUserId)` — single conversation with participants, auth check
+- [x] `findOrCreateDm(userAId, userBId)` — sort IDs, check existing, create if not found
+- [x] `createGroup({ name, creatorId, participantIds[] })` — insert conversation + participants, creator gets role admin
+- [x] `getUserConversations(userId)` — join with last_message + sender profile for preview
+- [x] `getConversationById(id, requestingUserId)` — single conversation with participants, auth check
 
 ##### E6. Message service (`apps/server/src/services/message.service.ts`)
 
-- [ ] `formatMessage(row)` — decrypt boundary, never exposes content_enc/content_iv
-- [ ] `sendMessage({ conversationId, senderId, content, type, imageUrl?, replyToId? })` — encrypt, FOR UPDATE txn, last_message_id update
-- [ ] `getMessages({ conversationId, cursor?, limit? })` — cursor pagination by sequence_number DESC
+- [x] `formatMessage(row)` — decrypt boundary, never exposes content_enc/content_iv
+- [x] `sendMessage({ conversationId, senderId, content, type, imageUrl?, replyToId? })` — encrypt, FOR UPDATE txn, last_message_id update
+- [x] `getMessages({ conversationId, cursor?, limit? })` — cursor pagination by sequence_number DESC
+- [x] `editMessage({ messageId, editorId, newContent })` — auth check, insert edit history, update message, cache invalidation
+- [x] `deleteMessage({ messageId, requesterId })` — auth check, soft delete (set content to null, type to "deleted"), cache invalidation
 
 ##### E7. Controllers, routes, and middleware
 
-- [ ] Services in `apps/server/src/services` (profile, users, conversations, messages)
-- [ ] Controllers in `apps/server/src/controllers` (profile, users, conversations, messages) and mount in `apps/server/src/index.ts`
+- [x] Services in `apps/server/src/services` (profile, users, conversations, messages)
+- [x] Controllers in `apps/server/src/controllers` (profile, users, conversations, messages) and mount in `apps/server/src/index.ts`
 - [x] Auth middleware: `isAuthenticated` in `apps/server/src/middlewares/auth.middlewares.ts` (sets `user`/`session` in context)
-- [ ] Participant guard middleware: add `isParticipant` in `apps/server/src/middlewares` (403 if not a member)
-- [ ] Validation middleware: `validate` from `apps/server/src/middlewares/validation.middlewares.ts`
+- [x] Membership guard middleware: add `isMember` in `apps/server/src/middlewares` (403 if not a member)
+- [x] Validation middleware: `validate` from `apps/server/src/middlewares/validation.middlewares.ts`
 
 Routes to implement:
 
 ```
-GET  /api/profile/me                   → getProfile, 404 if not found
+GET  /api/profile/me                   → getProfile, returns { exists, profile }
 POST /api/profile                      → createProfile (setup page submit)
-PATCH /api/profile/me                  → updateProfile (settings page)
+PATCH /api/profile                     → updateProfile (settings page)
+PATCH /api/profile/avatar              → updateProfileImage
 
-GET  /api/users/search?q=              → searchUsers (min 2 chars)
-GET  /api/users/presence?ids=          → getUserPresence (comma-separated IDs)
+GET  /api/profile/search?q=            → searchProfiles (min 2 chars)
+GET  /api/users/presence?ids=          → getUserPresence (deferred)
 
 GET  /api/conversations                → getUserConversations
 POST /api/conversations                → findOrCreateDm | createGroup
@@ -635,10 +621,10 @@ POST /api/conversations/:id/messages   → sendMessage (participant guard, encry
 
 ##### E8. Frontend
 
-- [ ] After login: call `GET /api/profile/me` → redirect to `/profile/setup` if 404
+- [ ] After login: call `GET /api/profile/me` → redirect to `/profile/setup` if `exists: false`
 - [ ] `/profile/setup` page: form prefilled with `user.name` and `user.image`, submit calls `POST /api/profile`, on success redirect to `/chat`
 - [ ] `/chat` shell: conversation list sidebar + empty thread state
-- [ ] "New Chat" button → search modal → `GET /api/users/search?q=` (debounced 300ms) → click result → `POST /api/conversations` → navigate to conversation
+- [ ] "New Chat" button → search modal → `GET /api/profile/search?q=` (debounced 300ms) → click result → `POST /api/conversations` → navigate to conversation
 - [ ] Conversation list: renders each item with avatar, display name, last message preview
 - [ ] Thread view: renders messages from `GET /api/conversations/:id/messages`
 - [ ] Composer: text input → `POST /api/conversations/:id/messages` → TanStack Query invalidates → thread re-renders
@@ -662,8 +648,8 @@ curl POST /api/profile { displayName: "simanto" } → 201 created
 curl POST /api/profile { displayName: "simanto" } again → 409 taken
 
 # Search
-curl GET /api/users/search?q=si → results, no self in list
-curl GET /api/users/search?q=s  → 422 too short
+curl GET /api/profile/search?q=si → results, no self in list
+curl GET /api/profile/search?q=s  → 422 too short
 
 # DM idempotency
 curl POST /api/conversations { type: "dm", participantId: "X" } → conv id "abc"
@@ -681,7 +667,7 @@ curl GET /api/conversations/abc/messages (not a participant) → 403
 
 #### F. Presence notes for Day 3
 
-Day 2 only needs the REST presence endpoint (`GET /api/users/presence?ids=`). Day 3 adds:
+Day 2 presence REST endpoint is deferred. Day 3 adds:
 
 - `SET presence:user:{id}` on WS connect
 - `EXPIRE` refresh on heartbeat (every 20s)
@@ -690,27 +676,27 @@ Day 2 only needs the REST presence endpoint (`GET /api/users/presence?ids=`). Da
 
 #### G. Gap verification (after merge)
 
-| Area | Status |
-|---|---|
-| Auth (signup/login) | Covered — Better Auth handles this |
-| Profile setup gate | Covered — Section B |
-| Display name uniqueness + index | Covered — Section A |
-| User search | Covered — Section C |
-| DM creation (find or create) | Covered — Section E5 |
-| Group creation | Covered — Section E5 |
-| Live presence (green dot) | Covered — Section D, wired in Day 3 |
-| Last seen timestamp | Covered — Section D, written on WS disconnect |
-| Message send with encryption | Covered — Section E6 |
-| Message pagination | Covered — Section E6 |
-| Conversation list with preview | Covered — Section E5 |
-| Redis cache (hot conversations) | Covered — Day 3 |
-| Typing indicators | Covered — Day 3 |
-| Message status (delivered/seen) | Covered — Day 4 |
-| Group roles + member management | Covered — Day 5 |
-| Reactions | Covered — Day 5 |
-| Image upload | Covered — Day 6 |
-| Message edit + cache invalidation | Covered — Day 6 |
-| Deployment | Covered — Day 7 |
+| Area                              | Status                                        |
+| --------------------------------- | --------------------------------------------- |
+| Auth (signup/login)               | Covered — Better Auth handles this            |
+| Profile setup gate                | Covered — Section B                           |
+| Display name uniqueness + index   | Covered — Section A                           |
+| User search                       | Covered — Section C                           |
+| DM creation (find or create)      | Covered — Section E5                          |
+| Group creation                    | Covered — Section E5                          |
+| Live presence (green dot)         | Covered — Section D, wired in Day 3           |
+| Last seen timestamp               | Covered — Section D, written on WS disconnect |
+| Message send with encryption      | Covered — Section E6                          |
+| Message pagination                | Covered — Section E6                          |
+| Conversation list with preview    | Covered — Section E5                          |
+| Redis cache (hot conversations)   | Covered — Day 3                               |
+| Typing indicators                 | Covered — Day 3                               |
+| Message status (delivered/seen)   | Covered — Day 4                               |
+| Group roles + member management   | Covered — Day 5                               |
+| Reactions                         | Covered — Day 5                               |
+| Image upload                      | Covered — Day 6                               |
+| Message edit + cache invalidation | Covered — Day 6                               |
+| Deployment                        | Covered — Day 7                               |
 
 ---
 

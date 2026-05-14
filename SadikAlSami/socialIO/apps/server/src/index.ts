@@ -9,7 +9,8 @@ import { errorHandler, notFound } from './middlewares';
 
 import type { AppEnv } from './types/app-env';
 
-import { profileController } from './controllers';
+import { conversationController, messageController, profileController } from './controllers';
+import { disconnectRedis, pub, redis, sub } from '@socialIO/db/redis';
 
 const app = new Hono<AppEnv>({ strict: false });
 
@@ -31,15 +32,27 @@ app.get('/', (c) => {
 });
 
 app.route('/api/profile', profileController);
+app.route('/api/conversations', conversationController);
+app.route('/api', messageController);
+// app.route('/api/presence', presenceController);
 
 app.notFound(notFound);
 app.onError(errorHandler);
-serve(
-	{
-		fetch: app.fetch,
-		port: 3000,
-	},
-	(info) => {
-		console.log(`Server is running on http://localhost:${info.port}`);
-	},
+
+const server = serve({ fetch: app.fetch, port: Number(env.PORT) }, (info) =>
+	console.log(`[server] listening on http://localhost:${info.port}`),
 );
+
+Promise.all([redis.connect(), pub.connect(), sub.connect()])
+	.then(() => console.log('[server] Redis clients connected'))
+	.catch((err) => {
+		console.error('[server] Redis connection failed:', err);
+		console.warn('[server] Continuing without Redis cache');
+	});
+
+process.on('SIGTERM', async () => {
+	console.log('[server] SIGTERM — shutting down');
+	server.close();
+	await disconnectRedis();
+	process.exit(0);
+});

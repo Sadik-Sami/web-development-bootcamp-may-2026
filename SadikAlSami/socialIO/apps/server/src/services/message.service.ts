@@ -3,6 +3,7 @@ import { decrypt, encrypt } from '@socialIO/db/lib';
 import { nanoid } from 'nanoid';
 import {
 	messageResponseSchema,
+	MESSAGE_PAGE_SIZE_DEFAULT,
 	type MessageResponse,
 	type CreateMessageBody,
 	type EditMessageBody,
@@ -11,10 +12,18 @@ import { db } from '@socialIO/db';
 import { conversation, message, messageEditHistory } from '@socialIO/db/schema';
 import { and, desc, eq, lt, max } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { redis, RedisKeys, RedisTTL } from '@socialIO/db/redis';
+import {
+	cacheAddMessage,
+	cacheBulkAddMessages,
+	cacheGetMessages,
+	cacheUpdateMessage,
+} from '@socialIO/db/redis/service';
 
-// Helper function to format message data for API responses
-// converts MessageSelect rows to MessageResponse by decrypting content and renaming fields as needed
+/**
+ * Formats a message row for API responses
+ * @param row - The message row from the database
+ * @returns The formatted message response
+ */
 function formatMessage(row: MessageSelect & { senderDisplayName?: string | null }): MessageResponse {
 	return messageResponseSchema.parse({
 		...row,
@@ -22,6 +31,13 @@ function formatMessage(row: MessageSelect & { senderDisplayName?: string | null 
 	});
 }
 
+/**
+ * Sends a new message in a conversation
+ * @param conversationId - The ID of the conversation
+ * @param senderId - The ID of the sender
+ * @param body - The message content and metadata
+ * @returns The formatted message response
+ */
 export async function sendMessage(
 	conversationId: string,
 	senderId: string,
@@ -102,25 +118,28 @@ export async function sendMessage(
 	const formatted = formatMessage(saved);
 
 	// 5. Populate Redis cache with plaintext JSON
-	// Pipeline: one round trip for all three redis operations
-	const cacheKey = RedisKeys.messageCache(conversationId);
-	const pipeline = redis.pipeline();
-	pipeline.zadd(cacheKey, formatted.sequenceNumber, JSON.stringify(formatted));
-	pipeline.zremrangebyrank(cacheKey, 0, -51);
-	pipeline.expire(cacheKey, RedisTTL.messageCache);
-	await pipeline.exec();
+	await cacheAddMessage(conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
 
 	return formatted;
 }
 
-export async function getMessages(conversationId: string, cursor?: number, limit = 50): Promise<MessageResponse[]> {
-	const cacheKey = RedisKeys.messageCache(conversationId);
-
+/**
+ * @desc Get messages for a conversation with pagination
+ * @param conversationId
+ * @param cursor - The sequence number to paginate from (exclusive)
+ * @param limit - Number of messages to return
+ * @returns A list of formatted message responses
+ */
+export async function getMessages(
+	conversationId: string,
+	cursor?: number,
+	limit = MESSAGE_PAGE_SIZE_DEFAULT,
+): Promise<MessageResponse[]> {
 	if (!cursor) {
 		try {
-			const cached = await redis.zrevrangebyscore(cacheKey, '+inf', '-inf', 'LIMIT', 0, limit);
-			if (cached.length === limit) {
-				return cached.map((s) => JSON.parse(s) as MessageResponse);
+			const cached = await cacheGetMessages(conversationId, limit);
+			if (cached) {
+				return cached.map((msg) => JSON.parse(msg) as MessageResponse);
 			}
 		} catch {
 			// Cache miss or Redis error, fallback to DB query
@@ -138,21 +157,25 @@ export async function getMessages(conversationId: string, cursor?: number, limit
 
 	// Populating Redis cache for first page load (when cursor is not provided) to optimize subsequent requests
 	if (!cursor && formatted.length > 0) {
-		const pipeline = redis.pipeline();
-
-		// Using zadd with sequenceNumber as score to maintain the order of messages in the cache
-		// Using zremrangebyrank to trim the cache to the most recent 50 messages
-		formatted.forEach((msg) => {
-			pipeline.zadd(cacheKey, msg.sequenceNumber, JSON.stringify(msg));
-		});
-		pipeline.zremrangebyrank(cacheKey, 0, -(limit + 1));
-		pipeline.expire(cacheKey, RedisTTL.messageCache);
-
-		await pipeline.exec();
+		await cacheBulkAddMessages(
+			conversationId,
+			formatted.map((msg) => ({
+				sequenceNumber: msg.sequenceNumber,
+				messageJson: JSON.stringify(msg),
+			})),
+			limit,
+		);
 	}
 	return formatted;
 }
 
+/**
+ * @desc Edit a message's content (only for text messages and if the requester is the sender)
+ * @param messageId
+ * @param senderId
+ * @param messageBody
+ * @returns The updated message response
+ */
 export async function editMessage(
 	messageId: string,
 	senderId: string,
@@ -200,15 +223,17 @@ export async function editMessage(
 	const formatted = formatMessage(updated);
 
 	// 6. Update Redis cache with the new content
-	const cacheKey = RedisKeys.messageCache(existing.conversationId);
-	const pipeline = redis.pipeline();
-	pipeline.zremrangebyscore(cacheKey, formatted.sequenceNumber, formatted.sequenceNumber);
-	pipeline.zadd(cacheKey, formatted.sequenceNumber, JSON.stringify(formatted));
-	await pipeline.exec();
+	await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
 
 	return formatted;
 }
 
+/**
+ * @desc Soft-delete a message (only for messages sent by the requester)
+ * @param messageId
+ * @param requestingUserId
+ * @returns The deleted message response
+ */
 export async function softDeleteMessage(messageId: string, requestingUserId: string): Promise<MessageResponse> {
 	const [existing] = await db.select().from(message).where(eq(message.id, messageId)).limit(1);
 
@@ -235,12 +260,7 @@ export async function softDeleteMessage(messageId: string, requestingUserId: str
 	const formatted = formatMessage(deleted);
 
 	// Update cache — the deleted shape has content: null
-	const cacheKey = RedisKeys.messageCache(existing.conversationId);
-
-	const pipeline = redis.pipeline();
-	pipeline.zremrangebyscore(cacheKey, formatted.sequenceNumber, formatted.sequenceNumber);
-	pipeline.zadd(cacheKey, formatted.sequenceNumber, JSON.stringify(formatted));
-	await pipeline.exec();
+	await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
 
 	return formatted;
 }

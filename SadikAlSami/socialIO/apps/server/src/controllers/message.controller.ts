@@ -14,19 +14,18 @@ import {
 export const messageController = new Hono<AppEnv>();
 
 /**
- * @description
- * - `GET    /api/conversations/:id/messages`          — paginated message fetch (cursor-based)
- * - `POST   /api/conversations/:id/messages`          — send a message
- * - `PATCH  /api/conversations/:id/messages/:msgId`   — edit a message (sender only)
- * - `DELETE /api/conversations/:id/messages/:msgId`   — soft-delete a message (sender only)
- *
- * All routes require authentication + active participant membership.
+ * @route GET /conversations/:id/messages
+ * @desc Get messages in a conversation with pagination
+ * @access Private (must be a member of the conversation)
+ * @param conversationId
+ * @param cursor
+ * @param limit
  */
-
 messageController.get(
 	'/conversations/:id/messages',
 	isAuthenticated,
 	isMember,
+	validate('param', conversationIdParamSchema),
 	validate('query', messageListQuerySchema),
 	async (c) => {
 		const user = c.get('user');
@@ -36,7 +35,7 @@ messageController.get(
 			throw new HTTPException(401, { message: 'Unauthorized' });
 		}
 
-		const conversationId = c.req.param('id');
+		const { id: conversationId } = c.req.valid('param');
 		const { cursor, limit } = c.req.valid('query');
 
 		const messages = await getMessages(conversationId, cursor, limit);
@@ -49,6 +48,15 @@ messageController.get(
 	},
 );
 
+/**
+ * @route POST /conversations/:id/messages
+ * @desc Send a message in a conversation
+ * @access Private (must be a member of the conversation)
+ * @param conversationId
+ * @param content
+ * @param type
+ * @param imageUrl (optional, required if type is 'image')
+ */
 messageController.post(
 	'/conversations/:id/messages',
 	isAuthenticated,
@@ -70,6 +78,14 @@ messageController.post(
 	},
 );
 
+/**
+ * @route PATCH /conversations/:id/messages/:msgId
+ * @desc Edit a message
+ * @access Private (only the sender can edit their message)
+ * @param conversationId
+ * @param msgId
+ * @param content
+ */
 messageController.patch(
 	'/conversations/:id/messages/:msgId',
 	isAuthenticated,
@@ -83,8 +99,7 @@ messageController.patch(
 			throw new HTTPException(401, { message: 'Unauthorized' });
 		}
 
-		// const messageId = c.req.param('msgId');
-		const { id: messageId } = c.req.valid('param');
+		const { msgId: messageId } = c.req.valid('param');
 		const messageBody = c.req.valid('json');
 
 		const updatedMessage = await editMessage(messageId, userId, messageBody);
@@ -92,6 +107,13 @@ messageController.patch(
 	},
 );
 
+/**
+ * @route DELETE /conversations/:id/messages/:msgId
+ * @desc Soft-delete a message
+ * @access Private (only the sender can delete their message)
+ * @param conversationId
+ * @param msgId
+ */
 messageController.delete(
 	'/conversations/:id/messages/:msgId',
 	isAuthenticated,
@@ -104,8 +126,7 @@ messageController.delete(
 			throw new HTTPException(401, { message: 'Unauthorized' });
 		}
 
-		// const messageId = c.req.param('msgId');
-		const { id: messageId } = c.req.valid('param');
+		const { msgId: messageId } = c.req.valid('param');
 
 		const deletedMessage = await softDeleteMessage(messageId, userId);
 		return c.json({ success: true, deletedMessage });

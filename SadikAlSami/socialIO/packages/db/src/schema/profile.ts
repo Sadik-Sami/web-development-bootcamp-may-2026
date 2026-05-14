@@ -19,9 +19,9 @@ export const userProfile = pgTable(
 			.notNull(),
 	},
 	(table) => [index('user_profile_display_name_idx').on(table.displayName)],
-  // The GIN trigram index lives in the custom migration file
-  // ==> packages/db/src/migrations/0002_enable_pg_trgm.sql
+	// The GIN trigram index lives in the custom migration file
+	// ==> packages/db/src/migrations/0002_enable_pg_trgm.sql
 );
 
-export type UserProfile = typeof userProfile.$inferSelect;
-export type NewUserProfile = typeof userProfile.$inferInsert;
+// export type UserProfile = typeof userProfile.$inferSelect;
+// export type NewUserProfile = typeof userProfile.$inferInsert;
