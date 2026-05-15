@@ -105,6 +105,7 @@ export const conversationListItemSchema = conversationResponseSchema.extend({
 			senderName: z.string().nullable(),
 		})
 		.nullable(),
+	unreadCount: z.number().int().min(0).default(0),
 });
 
 export const conversationParticipantSchema = z.object({

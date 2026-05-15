@@ -13,6 +13,7 @@ import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { nanoid } from 'nanoid';
 import { decrypt } from '@socialIO/db/lib/crypto.lib';
+import { getUnreadCounts } from './message.service';
 
 /**
  * @desc Get conversation details by ID
@@ -172,34 +173,37 @@ export async function createGroup(body: CreateGroupBody, creatorId: string): Pro
 }
 
 /**
- * @desc Get all conversations for a user
+ * @desc Get all conversations for a user with unread counts
  * @param userId
  * @returns
  */
 export async function getUserConversations(userId: string): Promise<ConversationListItemResponse[]> {
-	const rows = await db
-		.select({
-			id: conversation.id,
-			type: conversation.type,
-			name: conversation.name,
-			avatarUrl: conversation.avatarUrl,
-			updatedAt: conversation.updatedAt,
+	const [rows, unreadMap] = await Promise.all([
+		db
+			.select({
+				id: conversation.id,
+				type: conversation.type,
+				name: conversation.name,
+				avatarUrl: conversation.avatarUrl,
+				updatedAt: conversation.updatedAt,
 
-			lastMessageId: message.id,
-			lastMessageContentEnc: message.contentEnc,
-			lastMessageContentIv: message.contentIv,
-			lastMessageType: message.type,
-			lastMessageIsDeleted: message.isDeleted,
-			lastMessageCreatedAt: message.createdAt,
-			lastMessageSenderId: message.senderId,
-			lastMessageSenderName: userProfile.displayName,
-		})
-		.from(participant)
-		.innerJoin(conversation, eq(participant.conversationId, conversation.id))
-		.leftJoin(message, eq(conversation.lastMessageId, message.id))
-		.leftJoin(userProfile, eq(message.senderId, userProfile.id))
-		.where(and(eq(participant.userId, userId), isNull(participant.leftAt)))
-		.orderBy(desc(conversation.updatedAt));
+				lastMessageId: message.id,
+				lastMessageContentEnc: message.contentEnc,
+				lastMessageContentIv: message.contentIv,
+				lastMessageType: message.type,
+				lastMessageIsDeleted: message.isDeleted,
+				lastMessageCreatedAt: message.createdAt,
+				lastMessageSenderId: message.senderId,
+				lastMessageSenderName: userProfile.displayName,
+			})
+			.from(participant)
+			.innerJoin(conversation, eq(participant.conversationId, conversation.id))
+			.leftJoin(message, eq(conversation.lastMessageId, message.id))
+			.leftJoin(userProfile, eq(message.senderId, userProfile.id))
+			.where(and(eq(participant.userId, userId), isNull(participant.leftAt)))
+			.orderBy(desc(conversation.updatedAt)),
+		getUnreadCounts(userId),
+	]);
 
 	return rows.map((row) => {
 		const lastMessage =
@@ -230,6 +234,7 @@ export async function getUserConversations(userId: string): Promise<Conversation
 			avatarUrl: row.avatarUrl,
 			updatedAt: row.updatedAt,
 			lastMessage,
+			unreadCount: unreadMap[row.id] ?? 0,
 		});
 	});
 }

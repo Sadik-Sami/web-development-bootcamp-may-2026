@@ -7,13 +7,13 @@ import { isAuthenticated, isMember, validate } from '@/middlewares';
 
 import { conversationIdParamSchema, createConversationBodySchema } from '@/validators';
 
-import { createGroup, findOrCreateDM, getConversationById, getUserConversations } from '@/services';
+import { createGroup, findOrCreateDM, getConversationById, getUnreadCounts, getUserConversations } from '@/services';
 
 export const conversationController = new Hono<AppEnv>();
 
 /**
  * @route GET /conversations
- * @desc Get all conversations for the authenticated user
+ * @desc Get all conversations for the authenticated user with unread message counts
  * @access Private
  */
 conversationController.get('/', isAuthenticated, async (c) => {
@@ -28,6 +28,22 @@ conversationController.get('/', isAuthenticated, async (c) => {
 	const conversations = await getUserConversations(userId);
 
 	return c.json({ success: true, conversations });
+});
+
+/**
+ * @route GET /conversations/unread
+ * @desc Get unread message counts per conversation
+ * @access Private
+ */
+conversationController.get('/unread', isAuthenticated, async (c) => {
+	const user = c.get('user');
+	const userId = user?.id;
+	if (!userId) {
+		throw new HTTPException(401, { message: 'Unauthorized' });
+	}
+
+	const counts = await getUnreadCounts(userId);
+	return c.json({ success: true, counts });
 });
 
 /**

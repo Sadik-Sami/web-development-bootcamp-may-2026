@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { type AppEnv } from '@/types/app-env';
 import { HTTPException } from 'hono/http-exception';
-import { sendMessage, getMessages, editMessage, softDeleteMessage } from '@/services';
+import { sendMessage, getMessages, editMessage, softDeleteMessage, getMessageStatusCounts } from '@/services';
 import { isAuthenticated, validate, isMember } from '@/middlewares';
 import {
 	conversationIdParamSchema,
@@ -130,5 +130,28 @@ messageController.delete(
 
 		const deletedMessage = await softDeleteMessage(messageId, userId);
 		return c.json({ success: true, deletedMessage });
+	},
+);
+
+/**
+ * @route GET /messages/:id/status
+ * @desc Get delivery/read status counts for a message
+ * @access Private (must be a participant in the conversation)
+ */
+messageController.get(
+	'/messages/:msgId/status',
+	isAuthenticated,
+	validate('param', messageIdParamSchema),
+	async (c) => {
+		const user = c.get('user');
+		const userId = user?.id;
+		if (!userId) {
+			throw new HTTPException(401, { message: 'Unauthorized' });
+		}
+
+		const { msgId: messageId } = c.req.valid('param');
+
+		const status = await getMessageStatusCounts(messageId);
+		return c.json({ success: true, status });
 	},
 );

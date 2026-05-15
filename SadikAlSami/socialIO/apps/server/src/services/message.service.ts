@@ -9,8 +9,8 @@ import {
 	type EditMessageBody,
 } from '@/validators';
 import { db } from '@socialIO/db';
-import { conversation, message, messageEditHistory } from '@socialIO/db/schema';
-import { and, desc, eq, lt, max } from 'drizzle-orm';
+import { conversation, message, messageEditHistory, participant } from '@socialIO/db/schema';
+import { and, count, desc, eq, isNull, lt, max, ne } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import {
 	cacheAddMessage,
@@ -18,6 +18,8 @@ import {
 	cacheGetMessages,
 	cacheUpdateMessage,
 } from '@socialIO/db/redis/service';
+import { messageStatus } from '@socialIO/db/schema';
+import { publish, publishGlobal } from '@/ws/pubsub';
 
 /**
  * Formats a message row for API responses
@@ -118,7 +120,33 @@ export async function sendMessage(
 	const formatted = formatMessage(saved);
 
 	// 5. Populate Redis cache with plaintext JSON
-	await cacheAddMessage(conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	try {
+		await cacheAddMessage(conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	} catch {
+		console.warn('Failed to update cache for new message', { conversationId: conversationId, messageId: formatted.id });
+	}
+	// 6. Create delivered statuses for all other participants (fire and forget)
+	await createDeliveredStatuses(conversationId, formatted.id, senderId).catch((err) => {
+		console.error('[message] Failed to create delivered statuses:', err);
+	});
+
+	// 7. Publish to WebSocket subscribers about the new message and conversation update
+	try {
+		await publish(conversationId, {
+			type: 'new_message',
+			conversationId,
+			message: formatted,
+		});
+		await publishGlobal({
+			type: 'conversation_updated',
+			conversationId,
+			lastMessageId: formatted.id,
+			updatedAt: new Date().toISOString(),
+		});
+	} catch {
+		// Cache update failure should not block the main flow, so we catch and log it without throwing
+		console.warn('Failed to publish new message to Redis', { conversationId: conversationId, messageId: formatted.id });
+	}
 
 	return formatted;
 }
@@ -223,7 +251,33 @@ export async function editMessage(
 	const formatted = formatMessage(updated);
 
 	// 6. Update Redis cache with the new content
-	await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	try {
+		await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	} catch {
+		console.warn('Failed to update cache for edited message', {
+			conversationId: existing.conversationId,
+			messageId: formatted.id,
+		});
+	}
+
+	try {
+		await publish(existing.conversationId, {
+			type: 'new_message',
+			conversationId: existing.conversationId,
+			message: formatted,
+		});
+		await publishGlobal({
+			type: 'conversation_updated',
+			conversationId: existing.conversationId,
+			lastMessageId: formatted.id,
+			updatedAt: new Date().toISOString(),
+		});
+	} catch {
+		console.warn('Failed to publish edited message to Redis', {
+			conversationId: existing.conversationId,
+			messageId: formatted.id,
+		});
+	}
 
 	return formatted;
 }
@@ -260,7 +314,140 @@ export async function softDeleteMessage(messageId: string, requestingUserId: str
 	const formatted = formatMessage(deleted);
 
 	// Update cache — the deleted shape has content: null
-	await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	try {
+		await cacheUpdateMessage(existing.conversationId, formatted.sequenceNumber, JSON.stringify(formatted));
+	} catch {
+		console.warn('Failed to update cache for deleted message', {
+			conversationId: existing.conversationId,
+			messageId: formatted.id,
+		});
+	}
+
+	// Publish to WebSocket subscribers about the deleted message and conversation update
+	try {
+		await publish(existing.conversationId, {
+			type: 'new_message',
+			conversationId: existing.conversationId,
+			message: formatted,
+		});
+		await publishGlobal({
+			type: 'conversation_updated',
+			conversationId: existing.conversationId,
+			lastMessageId: formatted.id,
+			updatedAt: new Date().toISOString(),
+		});
+	} catch {
+		console.warn('Failed to publish deleted message to Redis', {
+			conversationId: existing.conversationId,
+			messageId: formatted.id,
+		});
+	}
 
 	return formatted;
+}
+
+/**
+ * @desc After a message is sent, create 'delivered' status rows for all participants
+ * except the sender. This runs outside the main transaction to avoid lock contention.
+ * @param conversationId
+ * @param messageId
+ * @param senderId
+ */
+export async function createDeliveredStatuses(
+	conversationId: string,
+	messageId: string,
+	senderId: string,
+): Promise<void> {
+	// Get all active participants except the sender
+	const participants = await db
+		.select({ userId: participant.userId })
+		.from(participant)
+		.where(
+			and(eq(participant.conversationId, conversationId), isNull(participant.leftAt), ne(participant.userId, senderId)),
+		);
+
+	if (participants.length === 0) return;
+
+	// Bulk insert delivered statuses
+	await db.insert(messageStatus).values(
+		participants.map((p) => ({
+			messageId,
+			userId: p.userId,
+			status: 'delivered' as const,
+			updatedAt: new Date(),
+		})),
+	);
+}
+
+/**
+ * @desc Get unread message counts per conversation for a user
+ * @param userId
+ * @returns Record<<conversationId, unreadCount>
+ */
+export async function getUnreadCounts(userId: string): Promise<Record<string, number>> {
+	const rows = await db
+		.select({
+			conversationId: message.conversationId,
+			count: count(),
+		})
+		.from(message)
+		.innerJoin(messageStatus, eq(message.id, messageStatus.messageId))
+		.where(and(eq(messageStatus.userId, userId), eq(messageStatus.status, 'delivered'), eq(message.isDeleted, false)))
+		.groupBy(message.conversationId);
+
+	const result: Record<string, number> = {};
+	for (const row of rows) {
+		result[row.conversationId] = row.count;
+	}
+	return result;
+}
+
+/**
+ * @desc Get "seen by" count for a specific message (for group read receipts)
+ * @param messageId
+ * @returns { deliveredCount, seenCount, totalParticipants }
+ */
+export async function getMessageStatusCounts(messageId: string): Promise<{
+	deliveredCount: number;
+	seenCount: number;
+	totalParticipants: number;
+}> {
+	const [messageRow] = await db
+		.select({ conversationId: message.conversationId, senderId: message.senderId })
+		.from(message)
+		.where(eq(message.id, messageId))
+		.limit(1);
+
+	if (!messageRow) {
+		throw new HTTPException(404, { message: 'Message not found' });
+	}
+
+	const totalParticipants = await db
+		.select({ count: count() })
+		.from(participant)
+		.where(
+			and(
+				eq(participant.conversationId, messageRow.conversationId),
+				isNull(participant.leftAt),
+				ne(participant.userId, messageRow.senderId), // Exclude sender
+			),
+		);
+
+	const statusCounts = await db
+		.select({
+			status: messageStatus.status,
+			count: count(),
+		})
+		.from(messageStatus)
+		.where(eq(messageStatus.messageId, messageId))
+		.groupBy(messageStatus.status);
+
+	const delivered = statusCounts.find((s) => s.status === 'delivered')?.count ?? 0;
+	const seen = statusCounts.find((s) => s.status === 'seen')?.count ?? 0;
+
+	return {
+		deliveredCount: delivered,
+		seenCount: seen,
+		totalParticipants: totalParticipants[0]?.count ?? 0,
+	};
 }
